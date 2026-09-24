@@ -1,0 +1,50 @@
+# Archivos de objetos y compilación
+*.o
+*.ko
+*.obj
+*.elf
+
+# Salidas del enlazador (linker)
+*.ilk
+*.map
+*.exp
+
+# Encabezados precompilados
+*.gch
+*.pch
+
+# Bibliotecas
+*.lib
+*.a
+*.la
+*.lo
+
+# Objetos compartidos y DLLs
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Ejecutables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Archivos de depuración (Debug)
+*.dSYM/
+*.su
+*.idb
+*.pdb
+*.dwo
+
+# Resultados de compilación de módulos del Kernel
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
