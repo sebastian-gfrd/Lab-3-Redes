@@ -14,12 +14,15 @@ typedef struct {
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        printf("Uso: %s <NOMBRE_DEL_PARTIDO>\n", argv[0]);
-        printf("Ejemplo: %s PARTIDO_A\n", argv[0]);
+        printf("Uso: %s <NOMBRE_DEL_PARTIDO> [PUERTO] [IP]\n", argv[0]);
+        printf("Ejemplo: %s PARTIDO_A 8080 127.0.0.1\n", argv[0]);
         return 1;
     }
 
     char *topic = argv[1];
+    int port = (argc >= 3) ? atoi(argv[2]) : PORT;
+    const char *ip = (argc >= 4) ? argv[3] : "127.0.0.1";
+
     int sock = 0;
     struct sockaddr_in serv_addr;
 
@@ -29,9 +32,9 @@ int main(int argc, char *argv[]) {
     }
 
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT);
+    serv_addr.sin_port = htons(port);
 
-    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, ip, &serv_addr.sin_addr) <= 0) {
         perror("Dirección inválida");
         return -1;
     }
@@ -41,18 +44,37 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    write(sock, "PUB", 3);
+    if (write(sock, "PUB", 3) != 3) {
+        perror("Error al enviar PUB");
+        close(sock);
+        return -1;
+    }
     sleep(1);
 
     printf("[PUBLICADOR] Transmitiendo 10 eventos para '%s'...\n", topic);
 
     for (int i = 1; i <= 10; i++) {
         Message msg;
-        strncpy(msg.topic, topic, sizeof(msg.topic));
+        memset(&msg, 0, sizeof(Message));
+        strncpy(msg.topic, topic, sizeof(msg.topic) - 1);
+        msg.topic[sizeof(msg.topic) - 1] = '\0';
         msg.seq_num = i;
         snprintf(msg.content, sizeof(msg.content), "Evento %d: Actualización de min %d en %s", i, i * 8, topic);
 
-        write(sock, &msg, sizeof(Message));
+        size_t total = 0;
+        char *ptr = (char *)&msg;
+        int err = 0;
+        while (total < sizeof(Message)) {
+            ssize_t n = write(sock, ptr + total, sizeof(Message) - total);
+            if (n <= 0) {
+                perror("Error escribiendo mensaje");
+                err = 1;
+                break;
+            }
+            total += n;
+        }
+        if (err) break;
+
         printf(" [ENVIADO] Evento #%d\n", i);
         sleep(1);
     }

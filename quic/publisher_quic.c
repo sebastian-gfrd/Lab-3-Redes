@@ -51,13 +51,15 @@ typedef struct {
 } QuicPacket;
 
 int main(int argc, char *argv[]) {
-    char *topic = "PARTIDO_A";
-    if (argc >= 2) {
-        topic = argv[1];
-    } else {
-        printf("Uso opcional: %s <NOMBRE_DEL_PARTIDO>\n", argv[0]);
-        printf("Usando tema por defecto: '%s'\n\n", topic);
+    if (argc < 2) {
+        printf("Uso: %s <NOMBRE_DEL_PARTIDO> [PUERTO] [IP]\n", argv[0]);
+        printf("Ejemplo: %s PARTIDO_A 7070 127.0.0.1\n", argv[0]);
+        return 1;
     }
+
+    char *topic = argv[1];
+    int port = (argc >= 3) ? atoi(argv[2]) : QUIC_PORT;
+    const char *ip = (argc >= 4) ? argv[3] : BROKER_IP;
 
     int sockfd;
     struct sockaddr_in broker_addr;
@@ -76,8 +78,8 @@ int main(int argc, char *argv[]) {
 
     memset(&broker_addr, 0, sizeof(broker_addr));
     broker_addr.sin_family = AF_INET;
-    broker_addr.sin_port = htons(QUIC_PORT);
-    broker_addr.sin_addr.s_addr = inet_addr(BROKER_IP);
+    broker_addr.sin_port = htons(port);
+    broker_addr.sin_addr.s_addr = inet_addr(ip);
 
     uint32_t pkt_seq = 1;
     uint64_t conn_id = 0;
@@ -131,8 +133,12 @@ int main(int argc, char *argv[]) {
            (struct sockaddr *)&broker_addr, sizeof(broker_addr));
 
     QuicPacket ack_pkt;
-    recvfrom(sockfd, &ack_pkt, sizeof(ack_pkt), 0, (struct sockaddr *)&broker_addr, &addrlen);
-    printf("[PUBLICADOR QUIC] Rol registrado por Stream 0 (Control). ACK recibido.\n\n");
+    ssize_t reg_ack = recvfrom(sockfd, &ack_pkt, sizeof(ack_pkt), 0, (struct sockaddr *)&broker_addr, &addrlen);
+    if (reg_ack <= 0 || ack_pkt.header.type != QUIC_PKT_ACK) {
+        printf("[PUBLICADOR QUIC] Advertencia: No se recibió ACK de registro de rol en Stream 0.\n");
+    } else {
+        printf("[PUBLICADOR QUIC] Rol registrado por Stream 0 (Control). ACK recibido.\n\n");
+    }
 
     // 4. Envío de 10 eventos deportivos en Stream 4 (Multiplexación y Entrega Confiable)
     printf("[PUBLICADOR QUIC] Transmitiendo 10 eventos para '%s' en Stream #4...\n", topic);

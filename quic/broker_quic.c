@@ -80,7 +80,12 @@ void handle_signal(int sig) {
     exit(0);
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+    int port = QUIC_PORT;
+    if (argc >= 2) {
+        port = atoi(argv[1]);
+    }
+
     signal(SIGINT, handle_signal);
     srand(time(NULL));
 
@@ -99,7 +104,7 @@ int main() {
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(QUIC_PORT);
+    server_addr.sin_port = htons(port);
 
     // 2. Asociar el socket al puerto asignado
     if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
@@ -109,7 +114,7 @@ int main() {
     }
 
     printf("=========================================================\n");
-    printf("[BROKER QUIC] Iniciado y escuchando en el puerto %d (UDP)\n", QUIC_PORT);
+    printf("[BROKER QUIC] Iniciado y escuchando en el puerto %d (UDP)\n", port);
     printf("[BROKER QUIC] Soporte para Connection IDs y Streams multiplexados\n");
     printf("=========================================================\n\n");
 
@@ -156,8 +161,9 @@ int main() {
                 if (stream_id == 0) {
                     if (strncmp(recv_pkt.payload, "SUB:", 4) == 0) {
                         char topic[32];
-                        strncpy(topic, recv_pkt.payload + 4, sizeof(topic) - 1);
-                        topic[sizeof(topic) - 1] = '\0';
+                        size_t tlen = sizeof(topic) - 1;
+                        memcpy(topic, recv_pkt.payload + 4, tlen);
+                        topic[tlen] = '\0';
                         topic[strcspn(topic, "\r\n")] = '\0';
 
                         // Registrar o actualizar suscriptor
@@ -169,6 +175,15 @@ int main() {
                             }
                         }
 
+                        if (found == -1) {
+                            for (int i = 0; i < sub_count; i++) {
+                                if (!subscribers[i].active) {
+                                    found = i;
+                                    break;
+                                }
+                            }
+                        }
+
                         if (found == -1 && sub_count < MAX_CLIENTS) {
                             found = sub_count++;
                         }
@@ -176,7 +191,7 @@ int main() {
                         if (found != -1) {
                             subscribers[found].conn_id = recv_pkt.header.conn_id;
                             subscribers[found].addr = client_addr;
-                            strncpy(subscribers[found].topic, topic, sizeof(subscribers[found].topic));
+                            memcpy(subscribers[found].topic, topic, sizeof(subscribers[found].topic));
                             subscribers[found].active = 1;
 
                             printf("[BROKER QUIC] [STREAM 0] Suscriptor registrado -> CID: 0x%016llX | Tema: %s | Cliente: %s:%d\n",
@@ -216,16 +231,17 @@ int main() {
                     sendto(server_fd, &ack_pkt, sizeof(ack_pkt), 0,
                            (struct sockaddr *)&client_addr, sizeof(client_addr));
 
-                    Message *msg = (Message *)recv_pkt.payload;
+                    Message msg;
+                    memcpy(&msg, recv_pkt.payload, sizeof(Message));
                     printf("[BROKER QUIC] [STREAM 4] Mensaje recibido [Pkt #%u | CID: 0x%016llX] -> [%s] #%d: %s\n",
                            recv_pkt.header.packet_num,
                            (unsigned long long)recv_pkt.header.conn_id,
-                           msg->topic, msg->seq_num, msg->content);
+                           msg.topic, msg.seq_num, msg.content);
 
                     // Reenviar a los suscriptores registrados al tema
                     int forwarded = 0;
                     for (int i = 0; i < sub_count; i++) {
-                        if (subscribers[i].active && strcmp(subscribers[i].topic, msg->topic) == 0) {
+                        if (subscribers[i].active && strcmp(subscribers[i].topic, msg.topic) == 0) {
                             QuicPacket forward_pkt;
                             memset(&forward_pkt, 0, sizeof(forward_pkt));
                             forward_pkt.header.type = QUIC_PKT_1RTT;
@@ -236,14 +252,14 @@ int main() {
                             forward_pkt.stream.offset = 0;
                             forward_pkt.stream.length = sizeof(Message);
                             forward_pkt.stream.fin = 0;
-                            memcpy(forward_pkt.payload, msg, sizeof(Message));
+                            memcpy(forward_pkt.payload, &msg, sizeof(Message));
 
                             sendto(server_fd, &forward_pkt, sizeof(forward_pkt), 0,
                                    (struct sockaddr *)&subscribers[i].addr, sizeof(subscribers[i].addr));
                             forwarded++;
                         }
                     }
-                    printf("             └── Reenviado a %d suscriptores del tema '%s'\n", forwarded, msg->topic);
+                    printf("             └── Reenviado a %d suscriptores del tema '%s'\n", forwarded, msg.topic);
                 }
                 break;
             }

@@ -72,13 +72,15 @@ void handle_signal(int sig) {
 int main(int argc, char *argv[]) {
     signal(SIGINT, handle_signal);
 
-    char *topic = "PARTIDO_A";
-    if (argc >= 2) {
-        topic = argv[1];
-    } else {
-        printf("Uso opcional: %s <NOMBRE_DEL_PARTIDO>\n", argv[0]);
-        printf("Usando tema por defecto: '%s'\n\n", topic);
+    if (argc < 2) {
+        printf("Uso: %s <NOMBRE_DEL_PARTIDO> [PUERTO] [IP]\n", argv[0]);
+        printf("Ejemplo: %s PARTIDO_A 7070 127.0.0.1\n", argv[0]);
+        return 1;
     }
+
+    char *topic = argv[1];
+    int port = (argc >= 3) ? atoi(argv[2]) : QUIC_PORT;
+    const char *ip = (argc >= 4) ? argv[3] : BROKER_IP;
 
     // 1. Crear socket UDP para QUIC
     if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
@@ -88,8 +90,8 @@ int main(int argc, char *argv[]) {
 
     memset(&broker_addr, 0, sizeof(broker_addr));
     broker_addr.sin_family = AF_INET;
-    broker_addr.sin_port = htons(QUIC_PORT);
-    broker_addr.sin_addr.s_addr = inet_addr(BROKER_IP);
+    broker_addr.sin_port = htons(port);
+    broker_addr.sin_addr.s_addr = inet_addr(ip);
 
     socklen_t addrlen = sizeof(broker_addr);
     uint32_t pkt_seq = 1;
@@ -135,8 +137,12 @@ int main(int argc, char *argv[]) {
 
     // Esperar confirmación ACK
     QuicPacket ack_pkt;
-    recvfrom(sockfd, &ack_pkt, sizeof(ack_pkt), 0, (struct sockaddr *)&broker_addr, &addrlen);
-    printf("[SUSCRIPTOR QUIC] Registrado en el tema '%s' por Stream 0. Esperando eventos...\n\n", topic);
+    ssize_t sub_ack = recvfrom(sockfd, &ack_pkt, sizeof(ack_pkt), 0, (struct sockaddr *)&broker_addr, &addrlen);
+    if (sub_ack <= 0 || ack_pkt.header.type != QUIC_PKT_ACK) {
+        printf("[SUSCRIPTOR QUIC] Advertencia: No se recibió ACK de registro de suscripción.\n");
+    } else {
+        printf("[SUSCRIPTOR QUIC] Registrado en el tema '%s' por Stream 0. Esperando eventos...\n\n", topic);
+    }
 
     // 4. Ciclo de recepción de eventos por Stream 4 (Datos)
     QuicPacket recv_pkt;
@@ -151,10 +157,11 @@ int main(int argc, char *argv[]) {
 
         // Procesar paquetes 1-RTT de datos
         if (recv_pkt.header.type == QUIC_PKT_1RTT && recv_pkt.stream.stream_id == 4) {
-            Message *msg = (Message *)recv_pkt.payload;
+            Message msg;
+            memcpy(&msg, recv_pkt.payload, sizeof(Message));
 
             printf("[SUSCRIPTOR QUIC] [Stream 4 | Pkt #%u] -> [%s] Evento #%d: %s\n",
-                   recv_pkt.header.packet_num, msg->topic, msg->seq_num, msg->content);
+                   recv_pkt.header.packet_num, msg.topic, msg.seq_num, msg.content);
 
             // Responder con ACK al broker para confirmar recepción
             QuicPacket confirm_ack;
