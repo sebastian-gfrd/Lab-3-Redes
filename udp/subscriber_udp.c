@@ -16,12 +16,15 @@ typedef struct {
 int main(int argc, char *argv[]) {
     // Verificar si el usuario ingresó el tema por línea de comandos
     if (argc < 2) {
-        printf("Uso: %s <NOMBRE_DEL_PARTIDO>\n", argv[0]);
-        printf("Ejemplo: %s PARTIDO_A\n", argv[0]);
+        printf("Uso: %s <NOMBRE_DEL_PARTIDO> [PUERTO] [IP]\n", argv[0]);
+        printf("Ejemplo: %s PARTIDO_A 9090 127.0.0.1\n", argv[0]);
         return 1;
     }
 
     char *topic = argv[1]; // Guardar el partido ingresado
+    int port = (argc >= 3) ? atoi(argv[2]) : BROKER_PORT;
+    const char *ip = (argc >= 4) ? argv[3] : BROKER_IP;
+
     int sockfd;
     struct sockaddr_in broker_addr;
     Message msg;
@@ -33,8 +36,8 @@ int main(int argc, char *argv[]) {
 
     memset(&broker_addr, 0, sizeof(broker_addr));
     broker_addr.sin_family = AF_INET;
-    broker_addr.sin_port = htons(BROKER_PORT);
-    broker_addr.sin_addr.s_addr = inet_addr(BROKER_IP);
+    broker_addr.sin_port = htons(port);
+    broker_addr.sin_addr.s_addr = inet_addr(ip);
 
     // Formatear mensaje de suscripción: "SUB:PARTIDO_A"
     char sub_req[64];

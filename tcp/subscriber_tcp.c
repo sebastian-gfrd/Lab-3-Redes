@@ -14,12 +14,15 @@ typedef struct {
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        printf("Uso: %s <NOMBRE_DEL_PARTIDO>\n", argv[0]);
-        printf("Ejemplo: %s PARTIDO_A\n", argv[0]);
+        printf("Uso: %s <NOMBRE_DEL_PARTIDO> [PUERTO] [IP]\n", argv[0]);
+        printf("Ejemplo: %s PARTIDO_A 8080 127.0.0.1\n", argv[0]);
         return 1;
     }
 
     char *topic = argv[1];
+    int port = (argc >= 3) ? atoi(argv[2]) : PORT;
+    const char *ip = (argc >= 4) ? argv[3] : "127.0.0.1";
+
     int sock = 0;
     struct sockaddr_in serv_addr;
 
@@ -29,9 +32,9 @@ int main(int argc, char *argv[]) {
     }
 
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT);
+    serv_addr.sin_port = htons(port);
 
-    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, ip, &serv_addr.sin_addr) <= 0) {
         perror("Dirección inválida");
         return -1;
     }
@@ -43,13 +46,30 @@ int main(int argc, char *argv[]) {
 
     char sub_req[64];
     snprintf(sub_req, sizeof(sub_req), "SUB:%s", topic);
-    write(sock, sub_req, strlen(sub_req));
+    if (write(sock, sub_req, strlen(sub_req)) <= 0) {
+        perror("Error al registrar suscripción");
+        close(sock);
+        return -1;
+    }
 
     printf("[SUSCRIPTOR] Registrado en el tema '%s'. Esperando noticias...\n", topic);
 
     Message msg;
-    
-    while (read(sock, &msg, sizeof(Message)) > 0) {
+
+    while (1) {
+        size_t total = 0;
+        char *ptr = (char *)&msg;
+        int disconnected = 0;
+        while (total < sizeof(Message)) {
+            ssize_t n = read(sock, ptr + total, sizeof(Message) - total);
+            if (n <= 0) {
+                disconnected = 1;
+                break;
+            }
+            total += n;
+        }
+        if (disconnected) break;
+
         printf(" -> [%s] Msg #%d: %s\n", msg.topic, msg.seq_num, msg.content);
     }
 
